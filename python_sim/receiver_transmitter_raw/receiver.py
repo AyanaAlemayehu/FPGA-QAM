@@ -1,35 +1,21 @@
-'''
-This file goes over the bare minimum to encode and decode I and Q values, and plots the output.
-'''
-
-import math
+from multiprocessing.connection import Listener
 from scipy.signal import kaiserord, lfilter, firwin, freqz
+import math
 import cmath
 import matplotlib.pyplot as plt
 
 # Simulation Constants/Globals
-SAMPLE_RATE = 10000 #how fast time steps are incremented per second, akin to the ADC/DAC sample rate
-NUM_SAMPLES = 4*SAMPLE_RATE
+SAMPLE_RATE = 1000 #how fast time steps are incremented per second, akin to the ADC/DAC sample rate
 SIM_DELTA = 1/SAMPLE_RATE #fractional amount of seconds incremented per sim step
 SIM_TIME = 0 # the current time of the sim
 
 # transmitter constants
-CARRIER_FREQ = 10
-MOD_COUNTER = 0
-MOD_MAX = NUM_SAMPLES/16 #halfway through the number of samples, the IQ values should flip
-MOD_FLIP = False
+CARRIER_FREQ = 100
 
 # utility functions
 def step_time():
-    global SIM_TIME, SIM_DELTA, MOD_COUNTER, MOD_MAX, MOD_FLIP
+    global SIM_TIME, SIM_DELTA
     SIM_TIME += SIM_DELTA
-    MOD_COUNTER = (MOD_COUNTER + 1) % MOD_MAX
-    if (MOD_COUNTER == 0):
-        print("flip")
-        MOD_FLIP = not MOD_FLIP
-
-def mix_iq(i, q):
-    return i*math.cos(2*math.pi*CARRIER_FREQ*SIM_TIME) + q*math.sin(2*math.pi*CARRIER_FREQ*SIM_TIME)
 
 def demix_iq(signal):
     # returns in i, q format
@@ -67,26 +53,23 @@ def recover_iq(ilist, qlist):
         comp = mag*cmath.exp(1j*ang)
         iq_recovered.append((comp.real, comp.imag))
     return iq_recovered
-'''
 
-SIGNAL CREATION
-
-'''
-
-# signal is created by mixing iq in some predetermined sequence (right now it is alternating between (1,-1) and (-1, 1))
+address = ('localhost', 6000)
+listener = Listener(address)
+conn = listener.accept()
 samples = []
-for i in range(NUM_SAMPLES):
-    if MOD_FLIP:
-        samples.append(mix_iq(1, -1))
-    else:
-        samples.append(mix_iq(-1, 1))
-    step_time()
+count = 0
 
-'''
+while True:
+    msg = conn.recv()
+    if (msg != 'close'):
+        samples.append(msg)
+    count += 1
+    if msg == 'close':
+        conn.close()
+        break
 
-SIGNAL RECOVERY
-
-'''
+# with this subset of messages, determine the information modulation rate and display the QAM constellation
 # signal is first recovered by again mixing i and q with cos and sin respectivley. These resulting samples will have high frequency components that 
 # need to be lowpassed
 i_raw = []
@@ -103,18 +86,18 @@ filtered_q = lowpass_filter(q_raw)
 
 # recover i and q now and plot (should see the alternating (1, -1) and (-1 ,1) pattern for i and q respectivley)
 recovered = recover_iq(filtered_i, filtered_q)
-x_axis = [i for i in range(NUM_SAMPLES)]
+x_axis = [i for i in range(len(recovered))]
 i_recovered = [i[0] for i in recovered]
 q_recovered = [i[1] for i in recovered]
 
-fig, ax = plt.subplots()
+# print(list(zip(i_recovered, q_recovered)))
 
-ax.plot(x_axis, i_recovered, label="I")
-ax.plot(x_axis, q_recovered, label="Q")
-ax.legend()
+plt.scatter(i_recovered, q_recovered)
+plt.grid()
+# fig, ax = plt.subplots()
+
+# ax.plot(x_axis, i_recovered, label="I")
+# ax.plot(x_axis, q_recovered, label="Q")
+# ax.legend()
 plt.show()
 print("recovered iq\n", )
-
-
-
-
